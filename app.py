@@ -1,8 +1,8 @@
-
 import os
 import re
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+
 try:
     import openai
     from dotenv import load_dotenv
@@ -15,7 +15,10 @@ app = Flask(__name__)
 CORS(app)
 
 SENSITIVE_KEYWORDS = ["hate", "attack", "self-harm", "suicide", "violence", "explosive"]
-PATTERNS = [r"\bi (want|plan|intend) to (kill|hurt|harm)\b", r"\b(credit card|ssn|social security|bank account)\b"]
+PATTERNS = [
+    r"\bi (want|plan|intend) to (kill|hurt|harm)\b",
+    r"\b(credit card|ssn|social security|bank account)\b"
+]
 
 @app.route('/api/moderate/hybrid', methods=['POST'])
 def moderate_hybrid():
@@ -42,10 +45,18 @@ def moderate_openai():
         result = response["results"][0]
         flagged = result["flagged"]
         categories = [k for k, v in result["categories"].items() if v]
-        return jsonify({"flagged": flagged, "categories": categories, "reason": ", ".join(categories) if categories else "safe"})
+        return jsonify({
+            "flagged": flagged,
+            "categories": categories,
+            "reason": ", ".join(categories) if categories else "safe"
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @app.route("/")
 def health():
     return "Zero Harm AI Flask backend is running."
+
+# ✅ Required for Render.com Docker web service
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
