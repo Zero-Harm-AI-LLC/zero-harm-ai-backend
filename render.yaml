@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: zero-harm-ai-backend
+    env: docker
+    plan: free
+    branch: main
+    envVars:
+      - key: OPENAI_API_KEY
+        value: YOUR_OPENAI_API_KEY
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true

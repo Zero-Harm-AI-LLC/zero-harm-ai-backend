@@ -1,0 +1,14 @@
+name: Deploy Backend to Render
+
+on:
+  push:
+    paths:
+      - '**'
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call Render Deploy Hook
+        run: curl -X POST ${{ secrets.RENDER_BACKEND_DEPLOY_HOOK }}
