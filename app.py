@@ -17,12 +17,12 @@ CORS(app)
 def analyze():
     try:
         data = request.get_json(force=True)
-
+        prompt = data["text"]
         # Log request
-        log_request(data)
+        log_request(prompt)
 
         # Proxy to OpenAI or other service
-        results = process_prompt(data)
+        results = process_prompt(prompt)
 
         return jsonify({
             "redacted": results.get('redacted', ""),           
