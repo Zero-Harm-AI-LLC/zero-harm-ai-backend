@@ -1,10 +1,9 @@
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 LOG_PATH = Path('/tmp/privacy_firewall_logs.jsonl')
 
 def log_request(data):
-    metadata = data or {}
     record = {
         "ts": datetime.now(datetime.timezone.utc).isoformat() + "Z",
         "data": data
