@@ -1,11 +1,8 @@
 services:
   - type: web
     name: zero-harm-ai-backend
-    env: docker
-    plan: free
+    env: python
+    buildCommand: pip install -r requirements.txt && python -m spacy download en_core_web_sm
+    startCommand: python app.py
     branch: main
-    envVars:
-      - key: OPENAI_API_KEY
-        value: YOUR_OPENAI_API_KEY
-    dockerfilePath: ./Dockerfile
-    autoDeploy: true
+    repo: https://github.com/<your-username>/zero-harm-ai-backend
