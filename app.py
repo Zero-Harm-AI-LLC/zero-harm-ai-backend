@@ -14,7 +14,7 @@ app = Flask(__name__)
 CORS(app)
 
 @app.route("/api/analyze", methods=["POST"])
-def moderate():
+def analyze():
     try:
         data = request.get_json(force=True)
 
