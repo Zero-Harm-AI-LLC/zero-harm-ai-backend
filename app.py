@@ -25,7 +25,8 @@ def moderate():
         results = process_prompt(data)
 
         return jsonify({
-            "detectors": results
+            "redacted": results.get('redacted', ""),           
+            "detectors": results.get('detected', {}),
         })
 
     except Exception as e:
