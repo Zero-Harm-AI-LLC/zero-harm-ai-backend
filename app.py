@@ -22,11 +22,11 @@ def analyze():
         log_request(prompt)
 
         # Proxy to OpenAI or other service
-        results = process_prompt(prompt)
+        redacted, detected = process_prompt(prompt)
 
         return jsonify({
-            "redacted": results.get('redacted', ""),           
-            "detectors": results.get('detected', {}),
+            "redacted": redacted,           
+            "detectors": detected,
         })
 
     except Exception as e:
