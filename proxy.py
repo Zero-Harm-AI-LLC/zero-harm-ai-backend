@@ -1,4 +1,4 @@
-from .detectors import detect_pii, detect_secrets
+from detectors import detect_pii, detect_secrets
 
 REDACT_MAP = {
     "EMAIL": "[REDACTED_EMAIL]",
