@@ -13,7 +13,7 @@ CONTACTS = []
 app = Flask(__name__)
 CORS(app)
 
-@app.route("/api/moderate", methods=["POST"])
+@app.route("/api/analyze", methods=["POST"])
 def moderate():
     try:
         data = request.get_json(force=True)
