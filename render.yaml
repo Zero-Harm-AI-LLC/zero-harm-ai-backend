@@ -5,4 +5,4 @@ services:
     buildCommand: pip install -r requirements.txt && python -m spacy download en_core_web_sm
     startCommand: python app.py
     branch: main
-    repo: https://github.com/<your-username>/zero-harm-ai-backend
+    repo: https://github.com/Zero-Harm-AI-LLC/zero-harm-ai-backend
