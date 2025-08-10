@@ -13,8 +13,8 @@ CONTACTS = []
 app = Flask(__name__)
 CORS(app)
 
-@app.route("/api/analyze", methods=["POST"])
-def analyze():
+@app.route("/api/check_privacy", methods=["POST"])
+def check_privacy():
     try:
         data = request.get_json(force=True)
         prompt = data["text"]
@@ -32,8 +32,8 @@ def analyze():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route("/health", methods=["GET"])
-def health():
+@app.route("/api/health_check", methods=["GET"])
+def health_check():
     return "Zero Harm AI Flask backend is running."
 
 @app.route('/api/contact', methods=['POST'])
