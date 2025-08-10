@@ -25,16 +25,18 @@ def check_privacy():
         redacted, detected = process_prompt(prompt)
 
         return jsonify({
-            "redacted": redacted,           
+            "redacted": redacted,
             "detectors": detected,
         })
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
 @app.route("/api/health_check", methods=["GET"])
 def health_check():
     return "Zero Harm AI Flask backend is running."
+
 
 @app.route('/api/contact', methods=['POST'])
 def contact():
@@ -43,12 +45,13 @@ def contact():
     email = data.get('email')
     message = data.get('message')
     if not (name and email and message):
-        return jsonify({'error':'missing fields'}), 400
-    CONTACTS.append({'name':name,'email':email,'message':message})
+        return jsonify({'error': 'missing fields'}), 400
+    CONTACTS.append({'name': name, 'email': email, 'message': message})
     # In production send an email via SMTP or hook to CRM
-    return jsonify({'ok':True, 'message':'received'})
+    return jsonify({'ok': True, 'message': 'received'})
 
 
+# Only run the Flask development server locally
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port, debug=True)
