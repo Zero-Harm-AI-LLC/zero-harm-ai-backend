@@ -51,9 +51,9 @@ def contact():
 
     try:
         msg = MIMEText(body, "html")
-        msg["Subject"] = subject
+        msg["Subject"] = subject + " " + to_email
         msg["From"] = os.environ["EMAIL_USER"]
-        msg["To"] = to_email
+        msg["To"] = "info@zeroharmai.com"   # send to our email box
 
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(os.environ["EMAIL_USER"], os.environ["EMAIL_PASS"])
