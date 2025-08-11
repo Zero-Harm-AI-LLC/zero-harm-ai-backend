@@ -3,6 +3,8 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 from proxy import process_prompt
 from logger import log_request
+from email.mime.text import MIMEText
+import smtplib
 import os
 
 # Load environment variables
@@ -37,19 +39,30 @@ def check_privacy():
 def health_check():
     return "Zero Harm AI Flask backend is running."
 
-
-@app.route('/api/contact', methods=['POST'])
+@app.route("/api/contact", methods=["POST"])
 def contact():
-    data = request.get_json() or {}
-    name = data.get('name')
-    email = data.get('email')
-    message = data.get('message')
-    if not (name and email and message):
-        return jsonify({'error': 'missing fields'}), 400
-    CONTACTS.append({'name': name, 'email': email, 'message': message})
-    # In production send an email via SMTP or hook to CRM
-    return jsonify({'ok': True, 'message': 'received'})
+    data = request.json
+    to_email = data.get("email")
+    subject = data.get("name")
+    body = data.get("message")
 
+    if not all([to_email, subject, body]):
+        return jsonify({"error": "Missing required fields"}), 400
+
+    try:
+        msg = MIMEText(body, "html")
+        msg["Subject"] = subject
+        msg["From"] = os.environ["EMAIL_USER"]
+        msg["To"] = to_email
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(os.environ["EMAIL_USER"], os.environ["EMAIL_PASS"])
+            server.send_message(msg)
+
+        return jsonify({"message": "Email sent successfully"}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # Only run the Flask development server locally
 if __name__ == "__main__":
