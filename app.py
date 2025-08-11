@@ -47,7 +47,10 @@ def contact():
     body = data.get("message")
 
     if not all([to_email, subject, body]):
-        return jsonify({"error": "Missing required fields"}), 400
+        return jsonify({"error": "Missing required fields",
+                        "to_email": to_email,
+                        "subject": subject,
+                        "body": body}), 400
 
     try:
         msg = MIMEText(body, "html")
