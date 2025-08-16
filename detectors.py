@@ -250,3 +250,7 @@ def redact_text(text: str, spans_or_map: Union[List[Dict[str, Any]], Dict[str, L
         original = out[s:e]
         out = out[:s] + _apply_strategy(original, strat) + out[e:]
     return out
+
+def detect_secrets(text):
+    out = {}
+    return out
