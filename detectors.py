@@ -1,3 +1,5 @@
+
+'''
 """\nDetectors using spaCy NER when available, falling back to regex heuristics.\n"""
 try:
     import spacy
@@ -57,3 +59,276 @@ def detect_secrets(text):
     if keys:
         out["SECRET"] = keys
     return out
+'''
+
+import re
+import hashlib
+from enum import Enum
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
+
+# ---------- Redaction strategy ----------
+class RedactionStrategy(str, Enum):
+    MASK_ALL = "mask_all"
+    MASK_LAST4 = "mask_last4"
+    HASH = "hash"
+
+def _mask_all(value: str) -> str:
+    return "*" * len(value)
+
+def _mask_last4(value: str) -> str:
+    keep = 4 if len(value) >= 4 else len(value)
+    return "*" * (len(value) - keep) + value[-keep:]
+
+def _hash_value(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+def _apply_strategy(value: str, strategy: RedactionStrategy) -> str:
+    if strategy == RedactionStrategy.MASK_ALL:
+        return _mask_all(value)
+    if strategy == RedactionStrategy.MASK_LAST4:
+        return _mask_last4(value)
+    if strategy == RedactionStrategy.HASH:
+        return _hash_value(value)
+    return value
+
+# ---------- Luhn for card validation ----------
+def _luhn_check(number: str) -> bool:
+    digits = [int(d) for d in number if d.isdigit()]
+    if len(digits) < 12 or len(digits) > 19:
+        return False
+    checksum = 0
+    parity = len(digits) % 2
+    for i, d in enumerate(digits):
+        if i % 2 == parity:
+            d *= 2
+            if d > 9:
+                d -= 9
+        checksum += d
+    return checksum % 10 == 0
+
+# ---------- Base detector helpers ----------
+CONTEXT_WINDOW = 30
+
+class BaseDetector:
+    type: str = "PII"
+
+    def finditer(self, text: str) -> Iterable[Union[re.Match, Tuple[int, int]]]:
+        raise NotImplementedError
+
+    def _context(self, text: str, start: int, end: int, window: int = CONTEXT_WINDOW) -> str:
+        left = max(0, start - window)
+        right = min(len(text), end + window)
+        return text[left:right]
+
+class RegexDetector(BaseDetector):
+    pattern: re.Pattern
+
+    def __init__(self, pattern: str, flags=re.IGNORECASE):
+        self.pattern = re.compile(pattern, flags)
+
+    def finditer(self, text: str) -> Iterable[re.Match]:
+        return self.pattern.finditer(text)
+
+# ---------- Detectors ----------
+class EmailDetector(RegexDetector):
+    type = "EMAIL"
+    def __init__(self):
+        super().__init__(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
+
+class PhoneDetector(RegexDetector):
+    type = "PHONE"
+    def __init__(self):
+        super().__init__(r"(?:(?:\+1[-.\s]?)?\(?(?:\d{3})\)?[-.\s]?\d{3}[-.\s]?\d{4})\b")
+
+class SSNDetector(RegexDetector):
+    type = "SSN"
+    def __init__(self):
+        super().__init__(r"\b(?!000|666|9\d{2})\d{3}[- ]?(?!00)\d{2}[- ]?(?!0000)\d{4}\b")
+
+class CreditCardDetector(BaseDetector):
+    type = "CREDIT_CARD"
+    def finditer(self, text: str) -> Iterable[Tuple[int, int]]:
+        pattern = re.compile(r"\b(?:\d[ -]?){12,19}\b")
+        for m in pattern.finditer(text):
+            raw = m.group()
+            digits_only = re.sub(r"\D", "", raw)
+            if _luhn_check(digits_only):
+                yield (m.start(), m.end())
+
+class BankAccountDetector(BaseDetector):
+    type = "BANK_ACCOUNT"
+    KEYWORDS = re.compile(r"\b(account|acct|routing|iban|aba|ach|bank)\b", re.I)
+    DIGITS = re.compile(r"\b\d{6,17}\b")
+
+    def finditer(self, text: str) -> Iterable[Tuple[int, int]]:
+        for m in self.DIGITS.finditer(text):
+            ctx = self._context(text, m.start(), m.end())
+            if self.KEYWORDS.search(ctx) and not re.fullmatch(r"\d{9}", m.group()):
+                yield (m.start(), m.end())
+
+class DOBDetector(BaseDetector):
+    type = "DOB"
+    DATE1 = re.compile(r"\b(0?[1-9]|1[0-2])[/-](0?[1-9]|[12]\d|3[01])[/-](19\d\d|20\d\d)\b")
+    DATE2 = re.compile(r"\b(19\d\d|20\d\d)-(0?[1-9]|1[0-2])-(0?[1-9]|[12]\d|3[01])\b")
+    DATE3 = re.compile(r"\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{1,2}),\s*(19\d\d|20\d\d)\b", re.I)
+
+    def finditer(self, text: str) -> Iterable[Tuple[int, int]]:
+        for pat in (self.DATE1, self.DATE2, self.DATE3):
+            for m in pat.finditer(text):
+                yield (m.start(), m.end())
+
+class DriversLicenseDetector(BaseDetector):
+    type = "DRIVERS_LICENSE"
+    KEYWORDS = re.compile(r"\b(driver'?s?\s+license|dl\s*#?|dmv|lic#|license\s*no\.?|dlnum)\b", re.I)
+    TOKEN = re.compile(r"\b[A-Z0-9]{6,12}\b", re.I)
+    CA = re.compile(r"\b[A-Z]\d{7}\b")
+    NY = re.compile(r"\b([A-Z]\d{7}|\d{9}|\d{8})\b")
+    TX = re.compile(r"\b\d{8}\b")
+
+    def finditer(self, text: str) -> Iterable[Tuple[int, int]]:
+        for m in self.TOKEN.finditer(text):
+            start, end = m.start(), m.end()
+            ctx = self._context(text, start, end)
+            if self.KEYWORDS.search(ctx) or self.CA.fullmatch(m.group()) or self.NY.fullmatch(m.group()) or self.TX.fullmatch(m.group()):
+                yield (start, end)
+
+class MRNDetector(BaseDetector):
+    type = "MEDICAL_RECORD_NUMBER"
+    KEYWORDS = re.compile(r"\b(MRN|medical\s*record\s*(no\.?|number)?)\b", re.I)
+    DIGITS = re.compile(r"\b[A-Z]?\d{6,12}[A-Z]?\b", re.I)
+
+    def finditer(self, text: str) -> Iterable[Tuple[int, int]]:
+        for m in self.DIGITS.finditer(text):
+            ctx = self._context(text, m.start(), m.end())
+            if self.KEYWORDS.search(ctx):
+                yield (m.start(), m.end())
+
+class PersonNameDetector(BaseDetector):
+    type = "PERSON_NAME"
+    NAME = re.compile(r"(?:Name:\s*)?\b([A-Z][a-zA-Z]+\s+[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\b")
+    EXCLUDES = {'Street', 'Avenue', 'Road', 'Company', 'Corp', 'LLC', 'Inc', 'St', 'Rd', 'Dr', 'Ln'}
+
+    def finditer(self, text: str) -> Iterable[Tuple[int, int]]:
+        for m in self.NAME.finditer(text):
+            value = m.group(1).strip()
+            if not any(value.endswith(x) for x in self.EXCLUDES):
+                yield (m.start(1), m.end(1))
+
+class AddressDetector(BaseDetector):
+    type = "ADDRESS"
+
+    # tokens and pieces
+    DIRECTION = r"(?:N|S|E|W|NE|NW|SE|SW)"
+    STREET_TYPE = r"(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Ln|Lane|Dr|Drive|Ct|Court|Cir|Circle|Way|Pkwy|Parkway|Pl|Place|Ter|Terrace|Trl|Trail|Hwy|Highway)"
+    # Escape '#' in VERBOSE patterns and keep '-' inside classes at the end to avoid range errors
+    UNIT = r"(?:Apt|Unit|Ste|Suite|\#)\s*[A-Za-z0-9-]+"
+    ZIP = r"(?:\d{5}(?:-\d{4})?)"
+    STATE = r"(?:AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY)"
+    CITY = r"(?:[A-Za-z][A-Za-z .'-]+)"
+    NAME_TOKEN = r"[A-Za-z0-9.'-]+"  # hyphen placed at end of class
+
+    STREET_ADDR = re.compile(
+        rf"""
+        \b
+        (?P<num>\d{{1,6}})
+        \s+
+        (?P<name>{NAME_TOKEN}(?:\s+{NAME_TOKEN}){{0,3}})
+        \s+
+        (?P<type>{STREET_TYPE})
+        (?:\s+(?P<dir>{DIRECTION}))?
+        (?:\s+(?P<unit>{UNIT}))?
+        (?:\s*,\s*(?P<city>{CITY})\s*,\s*(?P<state>{STATE})\s+(?P<zip>{ZIP}))?
+        \b
+        """,
+        re.IGNORECASE | re.VERBOSE,
+    )
+
+    POBOX = r"(?:P\.?\s*O\.?\s*Box\s*\d+)"
+    POBOX_ADDR = re.compile(
+        rf"""
+        \b
+        (?P<pobox>{POBOX})
+        (?:\s*,\s*(?P<city>{CITY})\s*,\s*(?P<state>{STATE})\s+(?P<zip>{ZIP}))?
+        \b
+        """,
+        re.IGNORECASE | re.VERBOSE,
+    )
+
+    def finditer(self, text: str):
+        for m in self.STREET_ADDR.finditer(text):
+            yield (m.start(), m.end())
+        for m in self.POBOX_ADDR.finditer(text):
+            yield (m.start(), m.end())
+
+
+# ---------- Defaults ----------
+def default_detectors() -> List[BaseDetector]:
+    return [
+        EmailDetector(), PhoneDetector(), SSNDetector(), CreditCardDetector(),
+        BankAccountDetector(), DOBDetector(), DriversLicenseDetector(),
+        MRNDetector(), PersonNameDetector(), AddressDetector(),
+    ]
+
+# ---------- Span location helper ----------
+PatternOrDetector = Union[re.Pattern, BaseDetector, RegexDetector]
+
+def _locate_spans(text: str, pattern_or_detector: PatternOrDetector) -> List[Dict[str, Any]]:
+    spans: List[Dict[str, Any]] = []
+    if isinstance(pattern_or_detector, re.Pattern):
+        for m in pattern_or_detector.finditer(text):
+            spans.append({"span": text[m.start():m.end()], "start": m.start(), "end": m.end()})
+        return spans
+    if hasattr(pattern_or_detector, "finditer"):
+        for obj in pattern_or_detector.finditer(text):  # detector
+            if isinstance(obj, tuple) and len(obj) == 2:
+                start, end = obj
+            else:
+                start, end = obj.start(), obj.end()
+            spans.append({"span": text[start:end], "start": start, "end": end})
+        return spans
+    raise TypeError("pattern_or_detector must be regex or detector")
+
+# ---------- Public API ----------
+def detect_pii(text: str, detectors: Optional[List[BaseDetector]] = None) -> Dict[str, List[Dict[str, Any]]]:
+    dets = detectors or default_detectors()
+    out: Dict[str, List[Dict[str, Any]]] = {}
+    for det in dets:
+        spans = _locate_spans(text, det)
+        if spans:
+            out.setdefault(det.type, []).extend(spans)
+    return out
+
+def redact_text(text: str, spans_or_map: Union[List[Dict[str, Any]], Dict[str, List[Dict[str, Any]]]], strategy: str = "mask_all") -> str:
+    try:
+        strat = RedactionStrategy(strategy)
+    except ValueError:
+        strat = RedactionStrategy.MASK_ALL
+    if isinstance(spans_or_map, dict):
+        spans_list = [d for lst in spans_or_map.values() for d in lst]
+    else:
+        spans_list = spans_or_map
+    out = text
+    for d in sorted(spans_list, key=lambda x: x["start"], reverse=True):
+        s, e = d["start"], d["end"]
+        original = out[s:e]
+        out = out[:s] + _apply_strategy(original, strat) + out[e:]
+    return out
+
+# ---------- Example ----------
+if __name__ == "__main__":
+    sample = (
+        "Name: John Smith\n"
+        "DOB: 01/15/1998\n"
+        "SSN: 123-45-6789\n"
+        "Phone: (415) 555-1234\n"
+        "Email: john.smith@example.com\n"
+        "Credit card: 4111 1111 1111 1111\n"
+        "Bank account: account 987654321234\n"
+        "DL#: A1234567 (CA)\n"
+        "MRN 123456789\n"
+        "Shipping Address: 1600 Amphitheatre Pkwy, Mountain View, CA 94043\n"
+        "PO Box 123, Portland, OR 97201\n"
+    )
+    pii = detect_pii(sample)
+    print("PII map:", pii)
+    print("\nRedacted (mask_last4):\n", redact_text(sample, pii, strategy="mask_last4"))
