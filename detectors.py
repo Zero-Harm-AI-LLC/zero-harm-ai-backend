@@ -250,22 +250,3 @@ def redact_text(text: str, spans_or_map: Union[List[Dict[str, Any]], Dict[str, L
         original = out[s:e]
         out = out[:s] + _apply_strategy(original, strat) + out[e:]
     return out
-
-# ---------- Example ----------
-if __name__ == "__main__":
-    sample = (
-        "Name: John Smith\n"
-        "DOB: 01/15/1998\n"
-        "SSN: 123-45-6789\n"
-        "Phone: (415) 555-1234\n"
-        "Email: john.smith@example.com\n"
-        "Credit card: 4111 1111 1111 1111\n"
-        "Bank account: account 987654321234\n"
-        "DL#: A1234567 (CA)\n"
-        "MRN 123456789\n"
-        "Shipping Address: 1600 Amphitheatre Pkwy, Mountain View, CA 94043\n"
-        "PO Box 123, Portland, OR 97201\n"
-    )
-    pii = detect_pii(sample)
-    print("PII map:", pii)
-    print("\nRedacted (mask_last4):\n", redact_text(sample, pii, strategy="mask_last4"))
