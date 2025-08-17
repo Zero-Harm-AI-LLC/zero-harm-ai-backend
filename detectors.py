@@ -177,24 +177,24 @@ class AddressDetector(BaseDetector):
     # tokens and pieces
     DIRECTION = r"(?:N|S|E|W|NE|NW|SE|SW)"
     STREET_TYPE = r"(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Ln|Lane|Dr|Drive|Ct|Court|Cir|Circle|Way|Pkwy|Parkway|Pl|Place|Ter|Terrace|Trl|Trail|Hwy|Highway)"
-    # Escape '#' in VERBOSE patterns and keep '-' inside classes at the end to avoid range errors
     UNIT = r"(?:Apt|Unit|Ste|Suite|\#)\s*[A-Za-z0-9-]+"
     ZIP = r"(?:\d{5}(?:-\d{4})?)"
     STATE = r"(?:AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY)"
     CITY = r"(?:[A-Za-z][A-Za-z .'-]+)"
-    NAME_TOKEN = r"[A-Za-z0-9.'-]+"  # hyphen placed at end of class
+    NAME_TOKEN = r"[A-Za-z0-9.'-]+"
 
     STREET_ADDR = re.compile(
         rf"""
         \b
         (?P<num>\d{{1,6}})
         \s+
+        (?:(?P<pre_dir>{DIRECTION})\s+)?           # Optional direction before street name
         (?P<name>{NAME_TOKEN}(?:\s+{NAME_TOKEN}){{0,3}})
         \s+
         (?P<type>{STREET_TYPE})
-        (?:\s+(?P<dir>{DIRECTION}))?
-        (?:\s+(?P<unit>{UNIT}))?
-        (?:\s*,\s*(?P<city>{CITY})\s*,\s*(?P<state>{STATE})\s+(?P<zip>{ZIP}))?
+        (?:\s+(?P<post_dir>{DIRECTION}))?          # Optional direction after street type
+        (?:\s+(?P<unit>{UNIT}))?                   # Optional unit
+        (?:\s*,?\s*(?P<city>{CITY})\s*,?\s*(?P<state>{STATE})\s+(?P<zip>{ZIP}))?  # Optional city, state, zip with flexible comma usage
         \b
         """,
         re.IGNORECASE | re.VERBOSE,
@@ -205,7 +205,7 @@ class AddressDetector(BaseDetector):
         rf"""
         \b
         (?P<pobox>{POBOX})
-        (?:\s*,\s*(?P<city>{CITY})\s*,\s*(?P<state>{STATE})\s+(?P<zip>{ZIP}))?
+        (?:\s*,?\s*(?P<city>{CITY})\s*,?\s*(?P<state>{STATE})\s+(?P<zip>{ZIP}))?
         \b
         """,
         re.IGNORECASE | re.VERBOSE,
@@ -213,7 +213,7 @@ class AddressDetector(BaseDetector):
 
     def finditer(self, text: str):
         for m in self.STREET_ADDR.finditer(text):
-            yield (m.start(), m.end())  # full match now includes city/state/zip
+            yield (m.start(), m.end())
         for m in self.POBOX_ADDR.finditer(text):
             yield (m.start(), m.end())
 
