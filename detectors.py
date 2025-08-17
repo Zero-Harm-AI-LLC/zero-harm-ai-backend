@@ -143,10 +143,10 @@ class MRNDetector(BaseDetector):
 class PersonNameDetector(BaseDetector):
     type = "PERSON_NAME"
 
-    # Pattern that allows mixed capitalization but requires at least first letter to be uppercase
-    # Matches 2-3 name parts: First Last OR First Middle Last
+    # Pattern that requires at least the first name part to be capitalized
+    # This catches "Susan wang", "Susan Wang", but avoids "my email" 
     NAME = re.compile(
-        r"(?:Name:\s*)?\b([A-Z][a-zA-Z]{1,}\s+[A-Z][a-zA-Z]{1,}(?:\s+[A-Z][a-zA-Z]{1,})?)\b"
+        r"(?:Name:\s*)?\b([A-Z][a-zA-Z]{1,}\s+[a-zA-Z]{1,}(?:\s+[a-zA-Z]{1,})?)\b"
     )
     
     # Extended exclusions: common non-person suffixes and words
@@ -166,13 +166,11 @@ class PersonNameDetector(BaseDetector):
         "September", "October", "November", "December"
     }
     
-    # Patterns that indicate non-name content
+    # Patterns that indicate non-name content - keep this minimal
     NON_NAME_PATTERNS = [
-        re.compile(r"\bMy\s+Name\s+Is\b", re.I),         # "My Name Is" phrase
         re.compile(r"\bMy\s+Email\s+Is\b", re.I),        # "My Email Is" phrase  
-        re.compile(r"\bThe\s+Name\s+Is\b", re.I),        # "The Name Is" phrase
-        re.compile(r"\bThis\s+Is\s+\w+", re.I),          # "This Is Something"
-        re.compile(r"\bThat\s+Is\s+\w+", re.I),          # "That Is Something"
+        re.compile(r"\bThe\s+Email\s+Is\b", re.I),       # "The Email Is" phrase
+        re.compile(r"\bEmail\s+Address\s+Is\b", re.I),   # "Email Address Is" phrase
     ]
 
     def finditer(self, text: str) -> Iterable[Tuple[int, int]]:
@@ -180,7 +178,12 @@ class PersonNameDetector(BaseDetector):
             value = m.group(1).strip()
             
             # Skip if it matches non-name patterns (like "My Name Is")
-            if any(pattern.search(value) for pattern in self.NON_NAME_PATTERNS):
+            skip_match = False
+            for pattern in self.NON_NAME_PATTERNS:
+                if pattern.search(value):
+                    skip_match = True
+                    break
+            if skip_match:
                 continue
             
             # Skip if ends with excluded tokens
