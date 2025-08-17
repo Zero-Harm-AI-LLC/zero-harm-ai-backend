@@ -143,33 +143,69 @@ class MRNDetector(BaseDetector):
 class PersonNameDetector(BaseDetector):
     type = "PERSON_NAME"
 
+    # Improved pattern that requires proper capitalization
+    # Each name part must start with uppercase and be at least 2 chars
     NAME = re.compile(
-        r"(?:Name:\s*)?\b([A-Za-z][a-zA-Z]+\s+[A-Za-z][a-zA-Z]+(?:\s+[A-Za-z][a-zA-Z]+)?)\b",
-        re.IGNORECASE
+        r"(?:Name:\s*)?\b([A-Z][a-z]{1,}(?:\s+[A-Z][a-z]{1,})*(?:\s+[A-Z][a-z]{1,}))\b"
     )
     
-    # Exclusions: common non-person suffixes and directional tokens
+    # Extended exclusions: common non-person suffixes and words
     EXCLUDES = {
+        # Address components
         "Street", "Avenue", "Road", "Company", "Corp", "LLC", "Inc", "St", "Rd", "Dr", "Ln",
         "Blvd", "Boulevard", "Lane", "Court", "Circle", "Way", "Place", "Terrace", "Trail",
         "Highway", "Parkway", "Pkwy", "Pl", "Ter", "Trl", "Hwy",
-        "NE", "NW", "SE", "SW", "N", "S", "E", "W"
+        # Directions
+        "NE", "NW", "SE", "SW", "N", "S", "E", "W", "North", "South", "East", "West",
+        # Common phrases/salutations
+        "Dear Sir", "Dear Madam", "Thank You", "Best Regards", "Kind Regards", 
+        "Yours Truly", "Very Truly", "Sincerely Yours",
+        # Days and months
+        "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+        "January", "February", "March", "April", "May", "June", "July", "August", 
+        "September", "October", "November", "December"
     }
+    
+    # Patterns that indicate non-name content
+    NON_NAME_PATTERNS = [
+        re.compile(r"\b[a-z]+\s+[a-z]+", re.I),      # all lowercase sequences like "my email"
+        re.compile(r"\bmy\s+\w+", re.I),             # "my something"
+        re.compile(r"\bis\s+\w+", re.I),             # "is something"  
+        re.compile(r"\bthe\s+\w+", re.I),            # "the something"
+        re.compile(r"\bthis\s+\w+", re.I),           # "this something"
+        re.compile(r"\bthat\s+\w+", re.I),           # "that something"
+    ]
 
     def finditer(self, text: str) -> Iterable[Tuple[int, int]]:
         for m in self.NAME.finditer(text):
             value = m.group(1).strip()
-
+            
+            # Skip if it matches non-name patterns (like "my email is")
+            if any(pattern.fullmatch(value) for pattern in self.NON_NAME_PATTERNS):
+                continue
+            
             # Skip if ends with excluded tokens
-            if any(value.split()[-1] == x for x in self.EXCLUDES):
+            words = value.split()
+            if any(words[-1] == x for x in self.EXCLUDES):
+                continue
+                
+            # Skip if any word is in excludes (case-insensitive)
+            if any(word in self.EXCLUDES for word in words):
                 continue
 
             # Skip if looks like an address context
-            ctx = self._context(text, m.start(1), m.end(1))
+            start, end = m.start(1), m.end(1)
+            ctx = self._context(text, start, end)
+            
+            # Check for address indicators
             if re.search(r"\b\d{5}\b", ctx) or re.search(r"\b(?:Street|St|Avenue|Ave|Road|Rd|Oregon|CA|NY|TX)\b", ctx, re.I):
                 continue
+                
+            # Check for email/contact context
+            if re.search(r"\b(?:email|@|contact|phone|address|call|write)\b", ctx, re.I):
+                continue
 
-            yield (m.start(1), m.end(1))
+            yield (start, end)
 
 # ---------- Address Detector ----------
 class AddressDetector(BaseDetector):
