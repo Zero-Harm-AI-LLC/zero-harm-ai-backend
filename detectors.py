@@ -163,14 +163,18 @@ class PersonNameDetector(BaseDetector):
         # Days and months
         "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
         "January", "February", "March", "April", "May", "June", "July", "August", 
-        "September", "October", "November", "December"
+        "September", "October", "November", "December",
+        # Common words that aren't names
+        "My", "The", "This", "That", "His", "Her", "Our", "Your", "Their"
     }
     
     # Patterns that indicate non-name content - keep this minimal
     NON_NAME_PATTERNS = [
+        re.compile(r"\bMy\s+[Nn]ame\s+[Ii]s\b", re.I),   # "My name is" phrase
         re.compile(r"\bMy\s+Email\s+Is\b", re.I),        # "My Email Is" phrase  
         re.compile(r"\bThe\s+Email\s+Is\b", re.I),       # "The Email Is" phrase
         re.compile(r"\bEmail\s+Address\s+Is\b", re.I),   # "Email Address Is" phrase
+        re.compile(r"\b(?:His|Her|Their)\s+[Nn]ame\s+[Ii]s\b", re.I), # "His/Her/Their name is"
     ]
 
     def finditer(self, text: str) -> Iterable[Tuple[int, int]]:
