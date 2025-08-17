@@ -171,6 +171,7 @@ class PersonNameDetector(BaseDetector):
 
             yield (m.start(1), m.end(1))
 
+# ---------- Address Detector ----------
 class AddressDetector(BaseDetector):
     type = "ADDRESS"
 
@@ -179,7 +180,16 @@ class AddressDetector(BaseDetector):
     STREET_TYPE = r"(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Ln|Lane|Dr|Drive|Ct|Court|Cir|Circle|Way|Pkwy|Parkway|Pl|Place|Ter|Terrace|Trl|Trail|Hwy|Highway)"
     UNIT = r"(?:Apt|Unit|Ste|Suite|\#)\s*[A-Za-z0-9-]+"
     ZIP = r"(?:\d{5}(?:-\d{4})?)"
-    STATE = r"(?:AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY)"
+    
+    # State abbreviations
+    STATE_ABBREV = r"(?:AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY)"
+    
+    # Full state names
+    STATE_FULL = r"(?:Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New\s+Hampshire|New\s+Jersey|New\s+Mexico|New\s+York|North\s+Carolina|North\s+Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode\s+Island|South\s+Carolina|South\s+Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West\s+Virginia|Wisconsin|Wyoming|District\s+of\s+Columbia)"
+    
+    # Combined state pattern (full names first to avoid partial matches)
+    STATE = rf"(?:{STATE_FULL}|{STATE_ABBREV})"
+    
     CITY = r"(?:[A-Za-z][A-Za-z .'-]+)"
     NAME_TOKEN = r"[A-Za-z0-9.'-]+"
 
@@ -189,12 +199,12 @@ class AddressDetector(BaseDetector):
         (?P<num>\d{{1,6}})
         \s+
         (?:(?P<pre_dir>{DIRECTION})\s+)?           # Optional direction before street name
-        (?P<name>{NAME_TOKEN}(?:\s+{NAME_TOKEN}){{0,3}})
+        (?P<n>{NAME_TOKEN}(?:\s+{NAME_TOKEN}){{0,3}})
         \s+
         (?P<type>{STREET_TYPE})
         (?:\s+(?P<post_dir>{DIRECTION}))?          # Optional direction after street type
         (?:\s+(?P<unit>{UNIT}))?                   # Optional unit
-        (?:\s*,?\s*(?P<city>{CITY})\s*,?\s*(?P<state>{STATE})\s+(?P<zip>{ZIP}))?  # Optional city, state, zip with flexible comma usage
+        (?:\s*,?\s*(?P<city>{CITY})\s*,?\s*(?P<state>{STATE})\s+(?P<zip>{ZIP}))?  # Optional city, state, zip
         \b
         """,
         re.IGNORECASE | re.VERBOSE,
