@@ -142,14 +142,34 @@ class MRNDetector(BaseDetector):
 
 class PersonNameDetector(BaseDetector):
     type = "PERSON_NAME"
-    NAME = re.compile(r"(?:Name:\s*)?\b([A-Z][a-zA-Z]+\s+[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\b")
-    EXCLUDES = {'Street', 'Avenue', 'Road', 'Company', 'Corp', 'LLC', 'Inc', 'St', 'Rd', 'Dr', 'Ln'}
+
+    NAME = re.compile(
+        r"(?:Name:\s*)?\b([A-Za-z][a-zA-Z]+\s+[A-Za-z][a-zA-Z]+(?:\s+[A-Za-z][a-zA-Z]+)?)\b",
+        re.IGNORECASE
+    )
+    
+    # Exclusions: common non-person suffixes and directional tokens
+    EXCLUDES = {
+        "Street", "Avenue", "Road", "Company", "Corp", "LLC", "Inc", "St", "Rd", "Dr", "Ln",
+        "Blvd", "Boulevard", "Lane", "Court", "Circle", "Way", "Place", "Terrace", "Trail",
+        "Highway", "Parkway", "Pkwy", "Pl", "Ter", "Trl", "Hwy",
+        "NE", "NW", "SE", "SW", "N", "S", "E", "W"
+    }
 
     def finditer(self, text: str) -> Iterable[Tuple[int, int]]:
         for m in self.NAME.finditer(text):
             value = m.group(1).strip()
-            if not any(value.endswith(x) for x in self.EXCLUDES):
-                yield (m.start(1), m.end(1))
+
+            # Skip if ends with excluded tokens
+            if any(value.split()[-1] == x for x in self.EXCLUDES):
+                continue
+
+            # Skip if looks like an address context
+            ctx = self._context(text, m.start(1), m.end(1))
+            if re.search(r"\b\d{5}\b", ctx) or re.search(r"\b(?:Street|St|Avenue|Ave|Road|Rd|Oregon|CA|NY|TX)\b", ctx, re.I):
+                continue
+
+            yield (m.start(1), m.end(1))
 
 class AddressDetector(BaseDetector):
     type = "ADDRESS"
@@ -193,7 +213,7 @@ class AddressDetector(BaseDetector):
 
     def finditer(self, text: str):
         for m in self.STREET_ADDR.finditer(text):
-            yield (m.start(), m.end())
+            yield (m.start(), m.end())  # full match now includes city/state/zip
         for m in self.POBOX_ADDR.finditer(text):
             yield (m.start(), m.end())
 
