@@ -143,10 +143,10 @@ class MRNDetector(BaseDetector):
 class PersonNameDetector(BaseDetector):
     type = "PERSON_NAME"
 
-    # Improved pattern that requires proper capitalization
+    # Pattern that allows mixed capitalization but requires at least first letter to be uppercase
     # Matches 2-3 name parts: First Last OR First Middle Last
     NAME = re.compile(
-        r"(?:Name:\s*)?\b([A-Z][a-z]{1,}\s+[A-Z][a-z]{1,}(?:\s+[A-Z][a-z]{1,})?)\b"
+        r"(?:Name:\s*)?\b([A-Z][a-zA-Z]{1,}\s+[A-Z][a-zA-Z]{1,}(?:\s+[A-Z][a-zA-Z]{1,})?)\b"
     )
     
     # Extended exclusions: common non-person suffixes and words
