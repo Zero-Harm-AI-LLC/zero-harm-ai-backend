@@ -144,9 +144,9 @@ class PersonNameDetector(BaseDetector):
     type = "PERSON_NAME"
 
     # Improved pattern that requires proper capitalization
-    # Each name part must start with uppercase and be at least 2 chars
+    # Matches 2-3 name parts: First Last OR First Middle Last
     NAME = re.compile(
-        r"(?:Name:\s*)?\b([A-Z][a-z]{1,}(?:\s+[A-Z][a-z]{1,})*(?:\s+[A-Z][a-z]{1,}))\b"
+        r"(?:Name:\s*)?\b([A-Z][a-z]{1,}\s+[A-Z][a-z]{1,}(?:\s+[A-Z][a-z]{1,})?)\b"
     )
     
     # Extended exclusions: common non-person suffixes and words
@@ -168,20 +168,19 @@ class PersonNameDetector(BaseDetector):
     
     # Patterns that indicate non-name content
     NON_NAME_PATTERNS = [
-        re.compile(r"\b[a-z]+\s+[a-z]+", re.I),      # all lowercase sequences like "my email"
-        re.compile(r"\bmy\s+\w+", re.I),             # "my something"
-        re.compile(r"\bis\s+\w+", re.I),             # "is something"  
-        re.compile(r"\bthe\s+\w+", re.I),            # "the something"
-        re.compile(r"\bthis\s+\w+", re.I),           # "this something"
-        re.compile(r"\bthat\s+\w+", re.I),           # "that something"
+        re.compile(r"\bMy\s+Name\s+Is\b", re.I),         # "My Name Is" phrase
+        re.compile(r"\bMy\s+Email\s+Is\b", re.I),        # "My Email Is" phrase  
+        re.compile(r"\bThe\s+Name\s+Is\b", re.I),        # "The Name Is" phrase
+        re.compile(r"\bThis\s+Is\s+\w+", re.I),          # "This Is Something"
+        re.compile(r"\bThat\s+Is\s+\w+", re.I),          # "That Is Something"
     ]
 
     def finditer(self, text: str) -> Iterable[Tuple[int, int]]:
         for m in self.NAME.finditer(text):
             value = m.group(1).strip()
             
-            # Skip if it matches non-name patterns (like "my email is")
-            if any(pattern.fullmatch(value) for pattern in self.NON_NAME_PATTERNS):
+            # Skip if it matches non-name patterns (like "My Name Is")
+            if any(pattern.search(value) for pattern in self.NON_NAME_PATTERNS):
                 continue
             
             # Skip if ends with excluded tokens
@@ -201,7 +200,7 @@ class PersonNameDetector(BaseDetector):
             if re.search(r"\b\d{5}\b", ctx) or re.search(r"\b(?:Street|St|Avenue|Ave|Road|Rd|Oregon|CA|NY|TX)\b", ctx, re.I):
                 continue
                 
-            # Check for email/contact context
+            # Check for email/contact context (but allow "name is" contexts since those contain real names)
             if re.search(r"\b(?:email|@|contact|phone|address|call|write)\b", ctx, re.I):
                 continue
 
