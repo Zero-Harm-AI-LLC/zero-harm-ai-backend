@@ -269,6 +269,41 @@ class AddressDetector(BaseDetector):
         for m in self.POBOX_ADDR.finditer(text):
             yield (m.start(), m.end())
 
+class SecretsDetector(BaseDetector):
+    type = "SECRETS"
+
+    PATTERNS = [
+        # --- OpenAI API keys ---
+        # Legacy/standard keys: "sk-" + 32-64 base62-ish chars
+        re.compile(r"\bsk-[A-Za-z0-9]{32,64}\b"),
+        # Project-scoped keys: "sk-proj-" + token "-" token (lengths vary; be conservative)
+        re.compile(r"\bsk-proj-[A-Za-z0-9]{16,}-[A-Za-z0-9]{16,}\b"),
+        # Org-scoped keys (seen in the wild; keep optional): "sk-org-" + token "-" token
+        re.compile(r"\bsk-org-[A-Za-z0-9]{16,}-[A-Za-z0-9]{16,}\b"),
+
+        # --- Existing patterns you already had ---
+        re.compile(r"\b(AKI|ASI)A[0-9A-Z]{16}\b"),                # AWS Access Key ID
+        re.compile(r"\b[A-Za-z0-9]{16}\b"),                       # AWS Session Token
+        re.compile(r"\b[0-9a-zA-Z/+]{40}\b"),                     # AWS Secret Access Key
+        re.compile(r"\bAIza[0-9A-Za-z\-_]{35}\b"),                # Google API Key
+        re.compile(r"\bxox[baprs]-[0-9A-Za-z-]{10,100}\b"),       # Slack tokens
+        re.compile(r"\beyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\b"),  # JWT
+        re.compile(r"\bsk_(live|test)_[0-9a-zA-Z]{24}\b"),        # Stripe keys
+        re.compile(r"\bghp_[0-9A-Za-z]{36}\b"),                 # GitHub PAT
+        re.compile(r"\bsk-[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20}\b")
+    ]
+
+    def finditer(self, text: str) -> List[Dict[str, Any]]:
+        findings: List[Dict[str, Any]] = []
+        for pat in self.PATTERNS:
+            for m in pat.finditer(text):
+                findings.append({
+                    "span": m.group(),
+                    "start": m.start(),
+                    "end": m.end()
+                })
+        return findings
+
 
 # ---------- Defaults ----------
 def default_detectors() -> List[BaseDetector]:
@@ -323,6 +358,10 @@ def redact_text(text: str, spans_or_map: Union[List[Dict[str, Any]], Dict[str, L
         out = out[:s] + _apply_strategy(original, strat) + out[e:]
     return out
 
-def detect_secrets(text):
-    out = {}
-    return out
+def detect_secrets(text: str) -> Dict[str, List[Dict[str, Any]]]:
+    """Scan text for API keys and secrets, return grouped under 'SECRETS'."""
+    detector = SecretsDetector()
+    findings = detector.finditer(text)
+    if findings:
+        return {"SECRETS": findings}
+    return {}
