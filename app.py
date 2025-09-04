@@ -45,6 +45,8 @@ def contact():
     to_email = data.get("email")
     subject = data.get("name")
     body = data.get("message")
+    company = data.get("company")
+    inqurityType = data.get("inqurityType")
 
     if not all([to_email, subject, body]):
         return jsonify({"error": "Missing required fields",
@@ -54,7 +56,7 @@ def contact():
 
     try:
         msg = MIMEText(body, "html")
-        msg["Subject"] = subject + " " + to_email
+        msg["Subject"] = subject + " " + to_email + " " + company + " " + inqurityType
         msg["From"] = os.environ["EMAIL_USER"]
         msg["To"] = "info@zeroharmai.com"   # send to our email box
 
