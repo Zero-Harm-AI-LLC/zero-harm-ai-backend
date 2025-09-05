@@ -21,9 +21,8 @@ class DetectionConfig:
     threshold_per_label: float = 0.5
     # If any label exceeds this, mark overall harmful=True
     overall_threshold: float = 0.5
-    # Optional boosts when patterns are present (applied as max(existing, boost))
+    # Optional boost when threat patterns are present (applied as max(existing, boost))
     threat_min_score_on_cue: float = 0.6
-    pii_min_score_boost: float = 0.6
 
 class HarmfulTextDetector:
     def __init__(self, config: DetectionConfig = DetectionConfig()):
@@ -66,17 +65,16 @@ class HarmfulTextDetector:
         # Decide which labels are "active"
         active = {
             lbl: s for lbl, s in scores.items()
-            if not lbl.startswith("_") and s >= self.config.threshold_per_label
+            if s >= self.config.threshold_per_label
         }
 
         harmful = any(
             s >= self.config.overall_threshold
             for lbl, s in scores.items()
-            if not lbl.startswith("_")
         )
 
         # Severity heuristic (P90 of active scores)
-        active_scores = sorted([s for l, s in scores.items() if not l.startswith("_")], reverse=True)
+        active_scores = sorted([s for l, s in scores.items()], reverse=True)
         severity = "low"
         if active_scores:
             p90 = active_scores[max(0, math.floor(0.9 * (len(active_scores)-1)))]
@@ -85,19 +83,14 @@ class HarmfulTextDetector:
 
         # Build a tidy result
         top = sorted(
-            [(lbl, float(score)) for lbl, score in scores.items() if not lbl.startswith("_")],
+            [(lbl, float(score)) for lbl, score in scores.items()],
             key=lambda x: x[1], reverse=True
         )
-
-        meta = {}
-        if "_pii_hits" in scores:
-            meta["pii_hits"] = scores["_pii_hits"]
 
         return {
             "text": text,
             "harmful": harmful,
             "severity": severity,
             "active_labels": list(active.keys()),
-            "scores": {lbl: round(sc, 4) for lbl, sc in top},
-            "meta": meta
+            "scores": {lbl: round(sc, 4) for lbl, sc in top}
         }
