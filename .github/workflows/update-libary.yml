@@ -1,0 +1,83 @@
+name: Update Library and Deploy
+
+on:
+  repository_dispatch:
+    types: [library-updated]
+  workflow_dispatch:
+    inputs:
+      library_version:
+        description: 'Library version to update to'
+        required: true
+        type: string
+
+jobs:
+  update-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Extract version info
+      id: version
+      run: |
+        if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+          VERSION="${{ github.event.client_payload.library_version }}"
+          LIBRARY_NAME="${{ github.event.client_payload.library_name }}"
+        else
+          VERSION="${{ github.event.inputs.library_version }}"
+          LIBRARY_NAME="zero-harm-ai-detectors"
+        fi
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        echo "LIBRARY_NAME=$LIBRARY_NAME" >> $GITHUB_OUTPUT
+        echo "Updating to library version: $VERSION"
+    
+    - name: Update requirements.txt
+      run: |
+        # Update or add the library requirement
+        if grep -q "^zero-harm-ai-detectors" requirements.txt; then
+          sed -i "s/^zero-harm-ai-detectors.*/zero-harm-ai-detectors>=${{ steps.version.outputs.VERSION }}/" requirements.txt
+        else
+          echo "zero-harm-ai-detectors>=${{ steps.version.outputs.VERSION }}" >> requirements.txt
+        fi
+        
+        echo "Updated requirements.txt:"
+        cat requirements.txt
+    
+    - name: Test the updated code
+      run: |
+        pip install -r requirements.txt
+        python -c "
+        from proxy import process_prompt
+        result = process_prompt('Test email: john@example.com')
+        print('✅ Test successful:', result)
+        "
+    
+    - name: Commit changes
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        
+        git add requirements.txt
+        if git diff --cached --quiet; then
+          echo "No changes to commit"
+        else
+          git commit -m "Update zero-harm-ai-detectors library to v${{ steps.version.outputs.VERSION }}"
+          git push
+        fi
+    
+    - name: Deploy to Render
+      if: success()
+      run: |
+        echo "Triggering Render deployment..."
+        curl -X POST "${{ secrets.RENDER_BACKEND_DEPLOY_HOOK }}"
+        echo "✅ Deployment triggered successfully"
+    
+    - name: Notify deployment
+      if: success()
+      run: |
+        echo "✅ Backend updated with zero-harm-ai-detectors v${{ steps.version.outputs.VERSION }} and deployed to Render"

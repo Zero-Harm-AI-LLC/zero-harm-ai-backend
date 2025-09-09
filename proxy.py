@@ -4,8 +4,14 @@ REDACT_MAP = {
     "EMAIL": "[REDACTED_EMAIL]",
     "PHONE": "[REDACTED_PHONE]",
     "SSN": "[REDACTED_SSN]",
-    "SECRET": "[REDACTED_SECRET]",
-    "PERSON": "[REDACTED_NAME]",
+    "SECRETS": "[REDACTED_SECRET]",  # Fixed: was "SECRET"
+    "PERSON_NAME": "[REDACTED_NAME]",  # Fixed: was "PERSON"
+    "CREDIT_CARD": "[REDACTED_CREDIT_CARD]",
+    "BANK_ACCOUNT": "[REDACTED_BANK_ACCOUNT]",
+    "DOB": "[REDACTED_DOB]",
+    "DRIVERS_LICENSE": "[REDACTED_DRIVERS_LICENSE]",
+    "MEDICAL_RECORD_NUMBER": "[REDACTED_MRN]",
+    "ADDRESS": "[REDACTED_ADDRESS]",
 }
 
 def redact_text(text: str, findings: dict) -> str:
