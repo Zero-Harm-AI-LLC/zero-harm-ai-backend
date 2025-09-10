@@ -1,0 +1,179 @@
+name: Update Library and Deploy
+
+on:
+  repository_dispatch:
+    types: [library-updated]
+  workflow_dispatch:
+    inputs:
+      library_version:
+        description: 'Library version to update to'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  update-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+    
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Debug Environment
+      run: |
+        echo "GitHub Event: ${{ github.event_name }}"
+        echo "Repository: ${{ github.repository }}"
+        echo "Ref: ${{ github.ref }}"
+        echo "Event Name: ${{ github.event_name }}"
+        if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+          echo "Dispatch Event Type: ${{ github.event.action }}"
+          echo "Client Payload: ${{ toJson(github.event.client_payload) }}"
+        fi
+    
+    - name: Extract version info
+      id: version
+      run: |
+        if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+          VERSION="${{ github.event.client_payload.library_version }}"
+          LIBRARY_NAME="${{ github.event.client_payload.library_name }}"
+          echo "Triggered by repository dispatch"
+        else
+          VERSION="${{ github.event.inputs.library_version }}"
+          LIBRARY_NAME="zero-harm-ai-detectors"
+          echo "Triggered by manual workflow dispatch"
+        fi
+        
+        # Validate version is not empty
+        if [ -z "$VERSION" ]; then
+          echo "ERROR: Version is empty"
+          exit 1
+        fi
+        
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        echo "LIBRARY_NAME=$LIBRARY_NAME" >> $GITHUB_OUTPUT
+        echo "Updating to library version: $VERSION"
+        echo "Library name: $LIBRARY_NAME"
+    
+    - name: Check current requirements.txt
+      run: |
+        echo "Current requirements.txt:"
+        cat requirements.txt || echo "requirements.txt not found"
+    
+    - name: Update requirements.txt
+      run: |
+        # Backup current requirements
+        cp requirements.txt requirements.txt.backup
+        
+        # Update or add the library requirement
+        if grep -q "^zero-harm-ai-detectors" requirements.txt; then
+          echo "Updating existing zero-harm-ai-detectors line"
+          sed -i "s/^zero-harm-ai-detectors.*/zero-harm-ai-detectors>=${{ steps.version.outputs.VERSION }}/" requirements.txt
+        else
+          echo "Adding new zero-harm-ai-detectors line"
+          echo "zero-harm-ai-detectors>=${{ steps.version.outputs.VERSION }}" >> requirements.txt
+        fi
+        
+        echo "Updated requirements.txt:"
+        cat requirements.txt
+        
+        echo "Changes made:"
+        diff requirements.txt.backup requirements.txt || echo "Files differ as expected"
+    
+    - name: Verify library availability
+      run: |
+        echo "Checking if version ${{ steps.version.outputs.VERSION }} is available on PyPI..."
+        # Try to install the specific version to verify it exists
+        pip install zero-harm-ai-detectors==${{ steps.version.outputs.VERSION }} --dry-run --report /dev/null || {
+          echo "⚠️  Version not yet available on PyPI, but continuing..."
+          echo "This is normal due to PyPI propagation delays"
+        }
+    
+    - name: Test the updated code
+      run: |
+        echo "Installing updated requirements..."
+        pip install -r requirements.txt
+        
+        echo "Testing proxy functionality..."
+        python -c "
+        try:
+            from proxy import process_prompt
+            result = process_prompt('Test email: john@example.com')
+            print('✅ Test successful:', result)
+        except Exception as e:
+            print('❌ Test failed:', str(e))
+            raise
+        "
+    
+    - name: Check for changes
+      id: check_changes
+      run: |
+        if git diff --quiet requirements.txt; then
+          echo "No changes to commit"
+          echo "HAS_CHANGES=false" >> $GITHUB_OUTPUT
+        else
+          echo "Changes detected"
+          echo "HAS_CHANGES=true" >> $GITHUB_OUTPUT
+          git diff requirements.txt
+        fi
+    
+    - name: Commit changes
+      if: steps.check_changes.outputs.HAS_CHANGES == 'true'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        
+        git add requirements.txt
+        git commit -m "Update zero-harm-ai-detectors library to v${{ steps.version.outputs.VERSION }}"
+        git push
+        
+        echo "✅ Changes committed and pushed"
+    
+    - name: Deploy to Render
+      if: success()
+      run: |
+        echo "Triggering Render deployment..."
+        
+        # Check if the deploy hook secret exists
+        if [ -z "${{ secrets.RENDER_BACKEND_DEPLOY_HOOK }}" ]; then
+          echo "❌ RENDER_BACKEND_DEPLOY_HOOK secret not found"
+          exit 1
+        fi
+        
+        # Trigger deployment
+        HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${{ secrets.RENDER_BACKEND_DEPLOY_HOOK }}")
+        
+        if [ "$HTTP_STATUS" -eq 200 ] || [ "$HTTP_STATUS" -eq 201 ]; then
+          echo "✅ Deployment triggered successfully (HTTP $HTTP_STATUS)"
+        else
+          echo "❌ Deployment trigger failed (HTTP $HTTP_STATUS)"
+          exit 1
+        fi
+    
+    - name: Summary
+      if: always()
+      run: |
+        echo "============================================"
+        echo "📋 WORKFLOW SUMMARY"
+        echo "============================================"
+        echo "Event Type: ${{ github.event_name }}"
+        echo "Library Version: ${{ steps.version.outputs.VERSION }}"
+        echo "Library Name: ${{ steps.version.outputs.LIBRARY_NAME }}"
+        echo "Changes Made: ${{ steps.check_changes.outputs.HAS_CHANGES }}"
+        echo "Deployment Triggered: ${{ job.status == 'success' }}"
+        echo "============================================"
+        
+        if [ "${{ job.status }}" = "success" ]; then
+          echo "🎉 Backend updated with zero-harm-ai-detectors v${{ steps.version.outputs.VERSION }} and deployed to Render"
+        else
+          echo "❌ Workflow completed with issues. Check the logs above."
+        fi
