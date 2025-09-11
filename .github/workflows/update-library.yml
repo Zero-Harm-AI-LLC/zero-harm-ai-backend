@@ -49,7 +49,7 @@ jobs:
           echo "Triggered by repository dispatch"
         else
           VERSION="${{ github.event.inputs.library_version }}"
-          LIBRARY_NAME="zero-harm-ai-detectors"
+          LIBRARY_NAME="zero_harm_ai_detectors"
           echo "Triggered by manual workflow dispatch"
         fi
         
@@ -75,12 +75,12 @@ jobs:
         cp requirements.txt requirements.txt.backup
         
         # Update or add the library requirement
-        if grep -q "^zero-harm-ai-detectors" requirements.txt; then
-          echo "Updating existing zero-harm-ai-detectors line"
-          sed -i "s/^zero-harm-ai-detectors.*/zero-harm-ai-detectors>=${{ steps.version.outputs.VERSION }}/" requirements.txt
+        if grep -q "^zero_harm_ai_detectors" requirements.txt; then
+          echo "Updating existing zero_harm_ai_detectors line"
+          sed -i "s/^zero_harm_ai_detectors.*/zero_harm_ai_detectors>=${{ steps.version.outputs.VERSION }}/" requirements.txt
         else
-          echo "Adding new zero-harm-ai-detectors line"
-          echo "zero-harm-ai-detectors>=${{ steps.version.outputs.VERSION }}" >> requirements.txt
+          echo "Adding new zero_harm_ai_detectors line"
+          echo "zero_harm_ai_detectors>=${{ steps.version.outputs.VERSION }}" >> requirements.txt
         fi
         
         echo "Updated requirements.txt:"
@@ -93,7 +93,7 @@ jobs:
       run: |
         echo "Checking if version ${{ steps.version.outputs.VERSION }} is available on PyPI..."
         # Try to install the specific version to verify it exists
-        pip install zero-harm-ai-detectors==${{ steps.version.outputs.VERSION }} --dry-run --report /dev/null || {
+        pip install zero_harm_ai_detectors==${{ steps.version.outputs.VERSION }} --dry-run --report /dev/null || {
           echo "⚠️  Version not yet available on PyPI, but continuing..."
           echo "This is normal due to PyPI propagation delays"
         }
@@ -134,7 +134,7 @@ jobs:
         git config --local user.name "GitHub Action"
         
         git add requirements.txt
-        git commit -m "Update zero-harm-ai-detectors library to v${{ steps.version.outputs.VERSION }}"
+        git commit -m "Update zero_harm_ai_detectors library to v${{ steps.version.outputs.VERSION }}"
         git push
         
         echo "✅ Changes committed and pushed"
@@ -174,7 +174,7 @@ jobs:
         echo "============================================"
         
         if [ "${{ job.status }}" = "success" ]; then
-          echo "🎉 Backend updated with zero-harm-ai-detectors v${{ steps.version.outputs.VERSION }} and deployed to Render"
+          echo "🎉 Backend updated with zero_harm_ai_detectors v${{ steps.version.outputs.VERSION }} and deployed to Render"
         else
           echo "❌ Workflow completed with issues. Check the logs above."
         fi

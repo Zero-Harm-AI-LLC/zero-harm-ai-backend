@@ -1,4 +1,4 @@
-from zero_harm_detectors import detect_pii, detect_secrets, redact_text, RedactionStrategy, HarmfulTextDetector, DetectionConfig
+from zero_harm_ai_detectors import detect_pii, detect_secrets, redact_text, RedactionStrategy, HarmfulTextDetector, DetectionConfig
 
 # Initialize detector (do this once, not per request)
 harmful_detector = HarmfulTextDetector()
