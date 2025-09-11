@@ -1,7 +1,12 @@
 from zero_harm_ai_detectors import detect_pii, detect_secrets, redact_text, RedactionStrategy, HarmfulTextDetector, DetectionConfig
 
 # Initialize detector (do this once, not per request)
-harmful_detector = HarmfulTextDetector()
+try:
+    harmful_detector = HarmfulTextDetector()
+    HARMFUL_DETECTION_ENABLED = True
+except Exception as e:
+    print(f"Warning: Harmful content detection disabled: {e}")
+    HARMFUL_DETECTION_ENABLED = False
 
 def process_prompt_with_harmful_detection(prompt: str):
     """Process prompt with PII, secrets, and harmful content detection"""
@@ -16,26 +21,51 @@ def process_prompt_with_harmful_detection(prompt: str):
     if secrets:
         detected.update(secrets)
     
-    # Detect harmful content
-    harmful_result = harmful_detector.detect(prompt)
-    if harmful_result['harmful']:
-        detected['HARMFUL_CONTENT'] = [{
-            'span': prompt,
-            'start': 0,
-            'end': len(prompt),
-            'severity': harmful_result['severity'],
-            'labels': harmful_result['active_labels']
-        }]
+    # Detect harmful content if enabled
+    if HARMFUL_DETECTION_ENABLED:
+        try:
+            harmful_result = harmful_detector.detect(prompt)
+            if harmful_result['harmful']:
+                detected['HARMFUL_CONTENT'] = [{
+                    'span': prompt,
+                    'start': 0,
+                    'end': len(prompt),
+                    'severity': harmful_result['severity'],
+                    'labels': harmful_result['active_labels']
+                }]
+        except Exception as e:
+            print(f"Warning: Harmful detection failed: {e}")
     
-    # Redact text
+    # Redact text using custom tokens (backend style)
     if detected:
-        redacted = redact_text(prompt, detected, strategy=RedactionStrategy.MASK_ALL)
+        redacted = custom_redact_text(prompt, detected)
     else:
         redacted = prompt
     
     return redacted, detected
 
-# Optional: Keep custom redaction tokens if needed
+def process_prompt(prompt: str):
+    """Main function used by app.py - uses custom redaction tokens"""
+    detected = {}
+    
+    # Detect PII
+    pii = detect_pii(prompt)
+    if pii:
+        detected.update(pii)
+    
+    # Detect secrets
+    secrets = detect_secrets(prompt)
+    if secrets:
+        detected.update(secrets)
+    
+    # Redact using custom tokens (backend style)
+    if detected:
+        redacted = custom_redact_text(prompt, detected)
+    else:
+        redacted = prompt
+    
+    return redacted, detected
+
 def custom_redact_text(text: str, findings: dict) -> str:
     """Custom redaction with backend-specific tokens"""
     REDACT_MAP = {
@@ -50,6 +80,7 @@ def custom_redact_text(text: str, findings: dict) -> str:
         "DRIVERS_LICENSE": "[REDACTED_DRIVERS_LICENSE]",
         "MEDICAL_RECORD_NUMBER": "[REDACTED_MRN]",
         "ADDRESS": "[REDACTED_ADDRESS]",
+        "HARMFUL_CONTENT": "[REDACTED_HARMFUL_CONTENT]",
     }
     
     spans = []

@@ -6,7 +6,7 @@ Test script to verify the workflow works end-to-end
 def test_library_import():
     """Test that the library can be imported"""
     try:
-        from zero_harm_detectors import detect_pii, detect_secrets, HarmfulTextDetector  # Fixed import
+        from zero_harm_ai_detectors import detect_pii, detect_secrets, HarmfulTextDetector  # Fixed import
         print("✅ Library import successful")
         return True
     except ImportError as e:
@@ -37,7 +37,7 @@ def test_proxy_integration():
 def test_pii_detection():
     """Test PII detection functionality"""
     try:
-        from zero_harm_detectors import detect_pii
+        from zero_harm_ai_detectors import detect_pii
         
         text = "Contact John Doe at john@example.com or 555-123-4567"
         results = detect_pii(text)
@@ -56,7 +56,7 @@ def test_pii_detection():
 def test_secrets_detection():
     """Test secrets detection functionality"""
     try:
-        from zero_harm_detectors import detect_secrets
+        from zero_harm_ai_detectors import detect_secrets
         
         text = "My API key is sk-1234567890abcdef1234567890abcdef"
         results = detect_secrets(text)
@@ -73,7 +73,7 @@ def test_secrets_detection():
 def test_harmful_content():
     """Test harmful content detection (may be slow due to model loading)"""
     try:
-        from zero_harm_detectors import HarmfulTextDetector
+        from zero_harm_ai_detectors import HarmfulTextDetector
         
         detector = HarmfulTextDetector()
         result = detector.detect("Hello, how are you?")

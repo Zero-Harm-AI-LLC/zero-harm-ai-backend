@@ -1,5 +1,5 @@
 import pytest
-from zero_harm_detectors import detect_pii, detect_secrets  # Fixed import
+from zero_harm_ai_detectors import detect_pii, detect_secrets  # Fixed import
 
 def test_detects_email_and_ssn():
     text = "Contact me at alice@example.com. SSN 123-45-6789."
