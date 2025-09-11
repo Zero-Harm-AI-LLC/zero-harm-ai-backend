@@ -1,17 +1,37 @@
 #!/usr/bin/env python3
 """
 Test script to verify the workflow works end-to-end
-Run this in your backend repository after setup
 """
 
 def test_library_import():
     """Test that the library can be imported"""
     try:
-        from zero_harm_detectors import detect_pii, detect_secrets, HarmfulTextDetector
+        from zero_harm_detectors import detect_pii, detect_secrets, HarmfulTextDetector  # Fixed import
         print("✅ Library import successful")
         return True
     except ImportError as e:
         print(f"❌ Library import failed: {e}")
+        return False
+
+def test_proxy_integration():
+    """Test the proxy.py integration"""
+    try:
+        from proxy import process_prompt
+        
+        text = "Email me at test@example.com with secret sk-abc123"
+        redacted, detected = process_prompt(text)
+        
+        # Check that redaction occurred (exact format depends on strategy chosen)
+        assert redacted != text
+        assert len(detected) > 0
+        
+        print("✅ Proxy integration working")
+        print(f"Original: {text}")
+        print(f"Redacted: {redacted}")
+        print(f"Detected: {list(detected.keys())}")
+        return True
+    except Exception as e:
+        print(f"❌ Proxy integration failed: {e}")
         return False
 
 def test_pii_detection():

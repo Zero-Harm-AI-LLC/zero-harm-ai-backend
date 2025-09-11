@@ -1,41 +1,70 @@
-from detectors import detect_pii, detect_secrets
+from zero_harm_detectors import detect_pii, detect_secrets, redact_text, RedactionStrategy, HarmfulTextDetector, DetectionConfig
 
-REDACT_MAP = {
-    "EMAIL": "[REDACTED_EMAIL]",
-    "PHONE": "[REDACTED_PHONE]",
-    "SSN": "[REDACTED_SSN]",
-    "SECRETS": "[REDACTED_SECRET]",  # Fixed: was "SECRET"
-    "PERSON_NAME": "[REDACTED_NAME]",  # Fixed: was "PERSON"
-    "CREDIT_CARD": "[REDACTED_CREDIT_CARD]",
-    "BANK_ACCOUNT": "[REDACTED_BANK_ACCOUNT]",
-    "DOB": "[REDACTED_DOB]",
-    "DRIVERS_LICENSE": "[REDACTED_DRIVERS_LICENSE]",
-    "MEDICAL_RECORD_NUMBER": "[REDACTED_MRN]",
-    "ADDRESS": "[REDACTED_ADDRESS]",
-}
+# Initialize detector (do this once, not per request)
+harmful_detector = HarmfulTextDetector()
 
-def redact_text(text: str, findings: dict) -> str:
-    spans = []
-    for kind, items in findings.items():
-        for it in items:
-            start = it.get('start')
-            end = it.get('end')
-            spans.append((start, end, REDACT_MAP.get(kind, "[REDACTED]")))
-    spans.sort(key=lambda s: s[0] or 0, reverse=True)
-    out = text
-    for start, end, token in spans:
-        if start is None or end is None:
-            continue
-        out = out[:start] + token + out[end:]
-    return out
-
-def process_prompt(prompt: str):
+def process_prompt_with_harmful_detection(prompt: str):
+    """Process prompt with PII, secrets, and harmful content detection"""
     detected = {}
+    
+    # Detect PII and secrets
     pii = detect_pii(prompt)
     if pii:
         detected.update(pii)
+    
     secrets = detect_secrets(prompt)
     if secrets:
         detected.update(secrets)
-    redacted = redact_text(prompt, detected)
+    
+    # Detect harmful content
+    harmful_result = harmful_detector.detect(prompt)
+    if harmful_result['harmful']:
+        detected['HARMFUL_CONTENT'] = [{
+            'span': prompt,
+            'start': 0,
+            'end': len(prompt),
+            'severity': harmful_result['severity'],
+            'labels': harmful_result['active_labels']
+        }]
+    
+    # Redact text
+    if detected:
+        redacted = redact_text(prompt, detected, strategy=RedactionStrategy.MASK_ALL)
+    else:
+        redacted = prompt
+    
     return redacted, detected
+
+# Optional: Keep custom redaction tokens if needed
+def custom_redact_text(text: str, findings: dict) -> str:
+    """Custom redaction with backend-specific tokens"""
+    REDACT_MAP = {
+        "EMAIL": "[REDACTED_EMAIL]",
+        "PHONE": "[REDACTED_PHONE]",
+        "SSN": "[REDACTED_SSN]",
+        "SECRETS": "[REDACTED_SECRET]",
+        "PERSON_NAME": "[REDACTED_NAME]",
+        "CREDIT_CARD": "[REDACTED_CREDIT_CARD]",
+        "BANK_ACCOUNT": "[REDACTED_BANK_ACCOUNT]",
+        "DOB": "[REDACTED_DOB]",
+        "DRIVERS_LICENSE": "[REDACTED_DRIVERS_LICENSE]",
+        "MEDICAL_RECORD_NUMBER": "[REDACTED_MRN]",
+        "ADDRESS": "[REDACTED_ADDRESS]",
+    }
+    
+    spans = []
+    for kind, items in findings.items():
+        for item in items:
+            start = item.get('start')
+            end = item.get('end')
+            if start is not None and end is not None:
+                spans.append((start, end, REDACT_MAP.get(kind, "[REDACTED]")))
+    
+    # Sort by start position in reverse order to avoid index shifting
+    spans.sort(key=lambda s: s[0], reverse=True)
+    
+    result = text
+    for start, end, token in spans:
+        result = result[:start] + token + result[end:]
+    
+    return result

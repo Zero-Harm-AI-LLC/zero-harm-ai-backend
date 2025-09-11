@@ -108,7 +108,8 @@ jobs:
         try:
             from proxy import process_prompt
             result = process_prompt('Test email: john@example.com')
-            print('✅ Test successful:', result)
+            print('✅ Test successful:', result[0][:50] + '...')
+            print('✅ Detected types:', list(result[1].keys()))
         except Exception as e:
             print('❌ Test failed:', str(e))
             raise
