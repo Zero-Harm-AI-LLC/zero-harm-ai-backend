@@ -1,64 +1,148 @@
-from zero_harm_ai_detectors import detect_pii, detect_secrets, redact_text, RedactionStrategy, HarmfulTextDetector, DetectionConfig
+"""
+Updated proxy.py to use the new AI-based detection pipeline
+"""
+from zero_harm_ai_detectors import ZeroHarmPipeline, PipelineConfig, RedactionStrategy, AI_DETECTION_AVAILABLE
 
-# Initialize detector (do this once, not per request)
-try:
-    harmful_detector = HarmfulTextDetector()
-    HARMFUL_DETECTION_ENABLED = True
-except Exception as e:
-    print(f"Warning: Harmful content detection disabled: {e}")
-    HARMFUL_DETECTION_ENABLED = False
+# ==================== Pipeline Configuration ====================
+# Initialize the pipeline once (reused for all requests)
+PIPELINE = None
+USE_AI_DETECTION = AI_DETECTION_AVAILABLE  # Automatically use AI if available
 
-def process_prompt_with_harmful_detection(prompt: str):
-    """Process prompt with PII, secrets, and harmful content detection"""
+def get_or_create_pipeline():
+    """Get or create the detection pipeline (lazy loading)"""
+    global PIPELINE
+    if PIPELINE is None:
+        if USE_AI_DETECTION:
+            print("Initializing AI-powered detection pipeline...")
+            config = PipelineConfig(
+                # PII detection settings
+                pii_threshold=0.7,  # Confidence threshold for AI detections
+                pii_aggregation_strategy="simple",
+                
+                # Harmful content settings
+                harmful_threshold_per_label=0.5,
+                harmful_overall_threshold=0.5,
+                
+                # Performance settings
+                device="cpu"  # Change to "cuda" if you have GPU
+            )
+            PIPELINE = ZeroHarmPipeline(config)
+            print("✅ AI pipeline ready!")
+        else:
+            print("⚠️ AI detection not available, falling back to regex")
+            # Fallback will be handled by the detection functions
+    return PIPELINE
+
+
+# ==================== Main Processing Functions ====================
+
+def process_prompt(prompt: str) -> tuple:
+    """
+    Main function used by app.py - detects and redacts sensitive content
+    
+    Args:
+        prompt: User input text
+        
+    Returns:
+        (redacted_text, detections_dict)
+        
+    Example:
+        redacted, detected = process_prompt("Email me at test@example.com")
+        # redacted = "Email me at [REDACTED_EMAIL]"
+        # detected = {"EMAIL": [{"span": "test@example.com", ...}]}
+    """
+    if USE_AI_DETECTION:
+        return process_prompt_ai(prompt)
+    else:
+        return process_prompt_legacy(prompt)
+
+
+def process_prompt_ai(prompt: str) -> tuple:
+    """
+    Process prompt using AI-based detection pipeline
+    
+    This provides:
+    - More accurate PII detection using transformer models
+    - Better person name detection
+    - Contextual understanding of entities
+    - Harmful content detection
+    """
+    pipeline = get_or_create_pipeline()
+    
+    # Run full detection pipeline
+    result = pipeline.detect(
+        prompt,
+        redaction_strategy=RedactionStrategy.TOKEN,
+        detect_pii=True,
+        detect_secrets=True,
+        detect_harmful=True  # Also check for harmful content
+    )
+    
+    # Convert to backend format
     detected = {}
     
-    # Detect PII and secrets
-    pii = detect_pii(prompt)
-    if pii:
-        detected.update(pii)
+    # Group detections by type
+    for detection in result.detections:
+        det_type = detection.type
+        
+        # Skip harmful content from regular detections (handle separately)
+        if det_type == "HARMFUL_CONTENT":
+            continue
+        
+        if det_type not in detected:
+            detected[det_type] = []
+        
+        detected[det_type].append({
+            "span": detection.text,
+            "start": detection.start,
+            "end": detection.end,
+            "confidence": detection.confidence,
+            "metadata": detection.metadata
+        })
     
-    secrets = detect_secrets(prompt)
-    if secrets:
-        detected.update(secrets)
+    # Add harmful content info if detected
+    if result.harmful:
+        detected["HARMFUL_CONTENT"] = [{
+            "span": prompt,
+            "start": 0,
+            "end": len(prompt),
+            "severity": result.severity,
+            "labels": list(result.harmful_scores.keys()),
+            "scores": result.harmful_scores
+        }]
     
-    # Detect harmful content if enabled
-    if HARMFUL_DETECTION_ENABLED:
-        try:
-            harmful_result = harmful_detector.detect(prompt)
-            if harmful_result['harmful']:
-                detected['HARMFUL_CONTENT'] = [{
-                    'span': prompt,
-                    'start': 0,
-                    'end': len(prompt),
-                    'severity': harmful_result['severity'],
-                    'labels': harmful_result['active_labels']
-                }]
-        except Exception as e:
-            print(f"Warning: Harmful detection failed: {e}")
-    
-    # Redact text using custom tokens (backend style)
-    if detected:
+    # Use custom redaction for backend
+    if result.harmful:
+        # If harmful content detected, redact entire text
+        redacted = f"[⚠️ HARMFUL CONTENT BLOCKED - {result.severity.upper()} SEVERITY]"
+    elif detected:
         redacted = custom_redact_text(prompt, detected)
     else:
-        redacted = prompt
+        redacted = result.redacted_text
     
     return redacted, detected
 
-def process_prompt(prompt: str):
-    """Main function used by app.py - uses custom redaction tokens"""
+
+def process_prompt_legacy(prompt: str) -> tuple:
+    """
+    Fallback to legacy regex-based detection
+    (Used when AI models are not available)
+    """
+    from zero_harm_ai_detectors import detect_pii, detect_secrets
+    
     detected = {}
     
     # Detect PII
-    pii = detect_pii(prompt)
+    pii = detect_pii(prompt, use_ai=False)
     if pii:
         detected.update(pii)
     
     # Detect secrets
-    secrets = detect_secrets(prompt)
+    secrets = detect_secrets(prompt, use_ai=False)
     if secrets:
         detected.update(secrets)
     
-    # Redact using custom tokens (backend style)
+    # Redact using custom tokens
     if detected:
         redacted = custom_redact_text(prompt, detected)
     else:
@@ -66,21 +150,44 @@ def process_prompt(prompt: str):
     
     return redacted, detected
 
+# ==================== Custom Redaction ====================
+
 def custom_redact_text(text: str, findings: dict) -> str:
-    """Custom redaction with backend-specific tokens"""
+    """
+    Custom redaction with backend-specific tokens
+    
+    This maintains the exact token format expected by the frontend/API
+    """
     REDACT_MAP = {
+        # PII types
         "EMAIL": "[REDACTED_EMAIL]",
         "PHONE": "[REDACTED_PHONE]",
         "SSN": "[REDACTED_SSN]",
-        "SECRETS": "[REDACTED_SECRET]",
-        "PERSON_NAME": "[REDACTED_NAME]",
         "CREDIT_CARD": "[REDACTED_CREDIT_CARD]",
         "BANK_ACCOUNT": "[REDACTED_BANK_ACCOUNT]",
         "DOB": "[REDACTED_DOB]",
         "DRIVERS_LICENSE": "[REDACTED_DRIVERS_LICENSE]",
         "MEDICAL_RECORD_NUMBER": "[REDACTED_MRN]",
         "ADDRESS": "[REDACTED_ADDRESS]",
+        
+        # Person and location (AI detections)
+        "PERSON": "[REDACTED_NAME]",
+        "PERSON_NAME": "[REDACTED_NAME]",
+        "LOCATION": "[REDACTED_LOCATION]",
+        "ORGANIZATION": "[REDACTED_ORG]",
+        "DATE": "[REDACTED_DATE]",
+        
+        # Secrets
+        "SECRETS": "[REDACTED_SECRET]",
+        "API_KEY": "[REDACTED_SECRET]",
+        "TOKEN": "[REDACTED_SECRET]",
+        "PASSWORD": "[REDACTED_SECRET]",
+        
+        # Harmful content
         "HARMFUL_CONTENT": "[REDACTED_HARMFUL_CONTENT]",
+        "TOXIC": "[REDACTED_HARMFUL_CONTENT]",
+        "THREAT": "[REDACTED_HARMFUL_CONTENT]",
+        "INSULT": "[REDACTED_HARMFUL_CONTENT]",
     }
     
     spans = []
@@ -89,7 +196,8 @@ def custom_redact_text(text: str, findings: dict) -> str:
             start = item.get('start')
             end = item.get('end')
             if start is not None and end is not None:
-                spans.append((start, end, REDACT_MAP.get(kind, "[REDACTED]")))
+                token = REDACT_MAP.get(kind, f"[REDACTED_{kind}]")
+                spans.append((start, end, token))
     
     # Sort by start position in reverse order to avoid index shifting
     spans.sort(key=lambda s: s[0], reverse=True)
@@ -99,3 +207,159 @@ def custom_redact_text(text: str, findings: dict) -> str:
         result = result[:start] + token + result[end:]
     
     return result
+
+
+# ==================== Advanced Features ====================
+
+def analyze_text_detailed(text: str) -> dict:
+    """
+    Provide detailed analysis of text including confidence scores
+    
+    Returns:
+        {
+            "original": original text,
+            "redacted": redacted text,
+            "detections": list of all detections with confidence,
+            "harmful_analysis": detailed harmful content scores,
+            "risk_score": overall risk score (0-1),
+            "recommendations": list of recommended actions
+        }
+    """
+    pipeline = get_or_create_pipeline()
+    
+    result = pipeline.detect(
+        text,
+        redaction_strategy=RedactionStrategy.TOKEN,
+        detect_pii=True,
+        detect_secrets=True,
+        detect_harmful=True
+    )
+    
+    # Calculate overall risk score
+    risk_factors = []
+    
+    # PII risk
+    pii_count = len([d for d in result.detections if d.type != "HARMFUL_CONTENT"])
+    if pii_count > 0:
+        risk_factors.append(min(pii_count * 0.2, 0.5))
+    
+    # Secrets risk (high priority)
+    secret_count = len([d for d in result.detections if d.type in ["API_KEY", "TOKEN", "PASSWORD", "SECRETS"]])
+    if secret_count > 0:
+        risk_factors.append(0.8)
+    
+    # Harmful content risk
+    if result.harmful:
+        severity_scores = {"low": 0.3, "medium": 0.6, "high": 0.9}
+        risk_factors.append(severity_scores.get(result.severity, 0.5))
+    
+    risk_score = max(risk_factors) if risk_factors else 0.0
+    
+    # Generate recommendations
+    recommendations = []
+    if pii_count > 0:
+        recommendations.append(f"Found {pii_count} PII instance(s) - consider data minimization")
+    if secret_count > 0:
+        recommendations.append("CRITICAL: API keys/secrets detected - rotate credentials immediately")
+    if result.harmful:
+        recommendations.append(f"Harmful content detected ({result.severity} severity) - review content policy")
+    
+    return {
+        "original": text,
+        "redacted": result.redacted_text,
+        "detections": [
+            {
+                "type": d.type,
+                "text": d.text,
+                "start": d.start,
+                "end": d.end,
+                "confidence": d.confidence,
+                "metadata": d.metadata
+            }
+            for d in result.detections
+        ],
+        "harmful_analysis": {
+            "is_harmful": result.harmful,
+            "severity": result.severity,
+            "scores": result.harmful_scores
+        } if result.harmful_scores else None,
+        "risk_score": risk_score,
+        "recommendations": recommendations
+    }
+
+
+def batch_process(texts: list) -> list:
+    """
+    Process multiple texts efficiently
+    
+    Args:
+        texts: List of text strings
+        
+    Returns:
+        List of (redacted_text, detections) tuples
+    """
+    pipeline = get_or_create_pipeline()
+    
+    results = []
+    for text in texts:
+        result = pipeline.detect(text)
+        
+        # Convert to format expected by app
+        detected = {}
+        for detection in result.detections:
+            if detection.type not in detected:
+                detected[detection.type] = []
+            detected[detection.type].append({
+                "span": detection.text,
+                "start": detection.start,
+                "end": detection.end
+            })
+        
+        redacted = custom_redact_text(text, detected) if detected else text
+        results.append((redacted, detected))
+    
+    return results
+
+
+# ==================== Testing & Debug ====================
+
+def test_pipeline():
+    """Test the detection pipeline with various inputs"""
+    test_cases = [
+        "Contact John Smith at john.smith@email.com",
+        "My phone is 555-123-4567 and SSN is 123-45-6789",
+        "API key: sk-1234567890abcdef1234567890abcdef",
+        "I hate you and want to hurt you",
+        "Credit card: 4532-0151-1283-0366",
+        "Meet me at 123 Main Street, New York, NY 10001"
+    ]
+    
+    print("Testing Zero Harm AI Pipeline")
+    print("=" * 60)
+    
+    for i, text in enumerate(test_cases, 1):
+        print(f"\nTest {i}:")
+        print(f"Original: {text}")
+        
+        redacted, detected = process_prompt(text)
+        print(f"Redacted: {redacted}")
+        print(f"Found: {', '.join(detected.keys()) if detected else 'Nothing'}")
+    
+    print("\n" + "=" * 60)
+    print("✅ All tests completed")
+
+
+if __name__ == "__main__":
+    # Run tests when executed directly
+    test_pipeline()
+    
+    # Example of detailed analysis
+    print("\n\nDetailed Analysis Example:")
+    print("=" * 60)
+    result = analyze_text_detailed(
+        "Contact me at admin@company.com with API key sk-abc123. I'll hurt anyone who tries to stop me!"
+    )
+    print(f"Risk Score: {result['risk_score']:.2f}")
+    print(f"Recommendations:")
+    for rec in result['recommendations']:
+        print(f"  - {rec}")

@@ -115,7 +115,7 @@ def main():
         test_pii_detection,
         test_secrets_detection,
         test_proxy_integration,
-        # test_harmful_content,  # Uncomment if you want to test (slow)
+        test_harmful_content,  # Uncomment if you want to test (slow)
     ]
     
     passed = 0
