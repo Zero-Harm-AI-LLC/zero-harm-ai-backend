@@ -13,7 +13,14 @@ load_dotenv()
 CONTACTS = []
 
 app = Flask(__name__)
-CORS(app)
+
+CORS(app, resources={
+    r"/api/*": {
+        "origins": "*",
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type"]
+    }
+})
 
 @app.route("/api/check_privacy", methods=["POST"])
 def check_privacy():
