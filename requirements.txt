@@ -7,7 +7,7 @@ python-dotenv==1.0.0
 gunicorn==20.1.0
 
 # Zero Harm AI Detectors (with AI support)
-zero_harm_ai_detectors[ai]>=0.2.0
+zero-harm-ai-detectors[ai]>=0.2.0
 
 # Additional dependencies for tokenizers
 protobuf>=3.20.0
