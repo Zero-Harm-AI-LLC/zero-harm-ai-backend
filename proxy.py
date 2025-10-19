@@ -86,23 +86,18 @@ def detect_harmful_legacy(text: str) -> dict:
         # Run detection
         result = detector.detect(text)
         
-        # Convert to expected format
-        if result["harmful"]:
-            return {
-                "HARMFUL_CONTENT": [{
-                    "span": text,
-                    "start": 0,
-                    "end": len(text),
-                    "severity": result["severity"],
-                    "labels": result["active_labels"],
-                    "scores": result["scores"]
-                }]
-            }
-        else:
-            return {}
+        # FIX: The result is ALREADY in the correct format!
+        # detector.detect() returns either:
+        # - {} (empty dict) if not harmful
+        # - {"HARMFUL_CONTENT": [{...}]} if harmful
+        
+        # Just return it directly
+        return result
             
     except Exception as e:
         print(f"⚠️ Error in harmful content detection: {e}")
+        import traceback
+        traceback.print_exc()
         return {}
     
 # ==================== Main Processing Functions ====================
