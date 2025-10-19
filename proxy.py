@@ -6,6 +6,7 @@ from zero_harm_ai_detectors import ZeroHarmPipeline, PipelineConfig, RedactionSt
 # ==================== Pipeline Configuration ====================
 # Initialize the pipeline once (reused for all requests)
 PIPELINE = None
+HARMFUL_DETECTOR = None
 USE_AI_DETECTION = AI_DETECTION_AVAILABLE  # Automatically use AI if available
 
 def get_or_create_pipeline():
@@ -33,7 +34,77 @@ def get_or_create_pipeline():
             # Fallback will be handled by the detection functions
     return PIPELINE
 
+def get_or_create_harmful_detector():
+    """Get or create the harmful detector (lazy loading)"""
+    global HARMFUL_DETECTOR
+    if HARMFUL_DETECTOR is None:
+        try:
+            from zero_harm_ai_detectors.harmful_detectors import HarmfulTextDetector, DetectionConfig
+            print("Initializing legacy harmful content detector...")
+            config = DetectionConfig(
+                threshold_per_label=0.5,
+                overall_threshold=0.5
+            )
+            HARMFUL_DETECTOR = HarmfulTextDetector(config)
+            print("✅ Legacy harmful detector ready!")
+        except ImportError:
+            print("⚠️ Harmful content detection unavailable (transformers not installed)")
+            HARMFUL_DETECTOR = False  # Mark as unavailable
+        except Exception as e:
+            print(f"⚠️ Error initializing harmful detector: {e}")
+            HARMFUL_DETECTOR = False
+    return HARMFUL_DETECTOR
 
+def detect_harmful_legacy(text: str) -> dict:
+    """
+    Detect harmful content using the legacy HarmfulTextDetector
+    
+    Args:
+        text: Input text to analyze
+        
+    Returns:
+        Dictionary in the format expected by process_prompt:
+        {
+            "HARMFUL_CONTENT": [{
+                "span": text,
+                "start": 0,
+                "end": len(text),
+                "severity": "low" | "medium" | "high",
+                "labels": list of detected labels,
+                "scores": dict of label scores
+            }]
+        }
+        Returns empty dict if not harmful or detector unavailable
+    """
+    detector = get_or_create_harmful_detector()
+    
+    # If detector is False, it means initialization failed
+    if detector is False:
+        return {}
+    
+    try:
+        # Run detection
+        result = detector.detect(text)
+        
+        # Convert to expected format
+        if result["harmful"]:
+            return {
+                "HARMFUL_CONTENT": [{
+                    "span": text,
+                    "start": 0,
+                    "end": len(text),
+                    "severity": result["severity"],
+                    "labels": result["active_labels"],
+                    "scores": result["scores"]
+                }]
+            }
+        else:
+            return {}
+            
+    except Exception as e:
+        print(f"⚠️ Error in harmful content detection: {e}")
+        return {}
+    
 # ==================== Main Processing Functions ====================
 
 def process_prompt(prompt: str) -> tuple:
@@ -122,7 +193,6 @@ def process_prompt_ai(prompt: str) -> tuple:
     
     return redacted, detected
 
-
 def process_prompt_legacy(prompt: str) -> tuple:
     """
     Fallback to legacy regex-based detection
@@ -142,9 +212,19 @@ def process_prompt_legacy(prompt: str) -> tuple:
     if secrets:
         detected.update(secrets)
     
+    # Detect harmful content using legacy detector
+    harmful_result = detect_harmful_legacy(prompt)
+    if harmful_result:
+        detected.update(harmful_result)
+    
     # Redact using custom tokens
     if detected:
-        redacted = custom_redact_text(prompt, detected)
+        # Check if harmful content was detected for full redaction
+        if "HARMFUL_CONTENT" in detected:
+            harmful_info = detected["HARMFUL_CONTENT"][0]
+            redacted = f"[⚠️ HARMFUL CONTENT BLOCKED - {harmful_info['severity'].upper()} SEVERITY]"
+        else:
+            redacted = custom_redact_text(prompt, detected)
     else:
         redacted = prompt
     
